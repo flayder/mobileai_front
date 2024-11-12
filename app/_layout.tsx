@@ -1,37 +1,97 @@
-import { DarkTheme, DefaultTheme, ThemeProvider } from '@react-navigation/native';
+import AppModalWrapper from '@/components/modal/AppModalWrapper';
+import { COLOR_BACKGROUND } from '@/constants/Colors';
+import useLoadApp from '@/hooks/useLoadApp';
+import store from '@/store';
+import { DefaultTheme, ThemeProvider } from '@react-navigation/native';
 import { useFonts } from 'expo-font';
-import { Stack } from 'expo-router';
+import { router, Stack } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
+import { View } from 'react-native';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
+import { NotifierWrapper } from 'react-native-notifier';
 import 'react-native-reanimated';
-
-import { useColorScheme } from '@/hooks/useColorScheme';
+import { Provider } from 'react-redux';
+import * as Updates from 'expo-updates';
+import { DB } from '@/utils/db';
+import { AppFetch } from '@/utils/AppFetch';
 
 // Prevent the splash screen from auto-hiding before asset loading is complete.
 SplashScreen.preventAutoHideAsync();
 
 export default function RootLayout() {
-  const colorScheme = useColorScheme();
+  const [isLoaded, setLoad] = useState(false)
+  const [isAuth, setAuth] = useState(false)
   const [loaded] = useFonts({
-    SpaceMono: require('../assets/fonts/SpaceMono-Regular.ttf'),
+    Inter: require('../assets/fonts/Inter.ttf'),
+    InterItalic: require('../assets/fonts/Inter-italic.ttf'),
   });
 
   useEffect(() => {
-    if (loaded) {
-      SplashScreen.hideAsync();
-    }
-  }, [loaded]);
+    (async () => {
+      await DB.init()
+      const token = await DB.getOption('token')
+      if(token) {
+        const response = await AppFetch.postWithToken('current_user')
+        if(response.status === 200) {
+          setAuth(true)
+        } else {
+          await DB.createOrUpdate('phone', '')
+          await DB.createOrUpdate('password', '')
+          await DB.createOrUpdate('token', '')
+        }
+      }
+      setLoad(true)
+    })()
+  }, [])
 
-  if (!loaded) {
+  //const appLoaded = useLoadApp()
+
+  async function onFetchUpdateAsync() {
+    try {
+      const update = await Updates.checkForUpdateAsync();
+
+      if (update.isAvailable) {
+        await Updates.fetchUpdateAsync();
+        await Updates.reloadAsync();
+      }
+    } catch (error) {
+      // You can also add an alert() to see the error message in case of an error when fetching updates.
+      alert(`Error fetching latest Expo update: ${error}`);
+    }
+  }
+
+  //useEffect(() => {
+  //  onFetchUpdateAsync()
+  //}, [])
+
+  useEffect(() => {
+    if (loaded && isLoaded) {
+      SplashScreen.hideAsync()
+      if(isAuth) {
+        router.replace('/profile/main')
+      }
+    }
+  }, [loaded, isLoaded, isAuth]);
+
+  if (!loaded || !isLoaded) {
     return null;
   }
 
   return (
-    <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
-      <Stack>
-        <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-        <Stack.Screen name="+not-found" />
-      </Stack>
-    </ThemeProvider>
+    <Provider store={store}>
+      <GestureHandlerRootView>
+        <NotifierWrapper>
+          <ThemeProvider value={DefaultTheme}>
+            <Stack screenOptions={({headerStyle: {backgroundColor: COLOR_BACKGROUND}})}>
+              <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+              <Stack.Screen name="profile" options={{ headerShown: false }} />
+              <Stack.Screen name="+not-found" />
+            </Stack>
+            <AppModalWrapper />
+          </ThemeProvider>
+        </NotifierWrapper>
+      </GestureHandlerRootView>
+    </Provider>
   );
 }

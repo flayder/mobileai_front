@@ -1,0 +1,1 @@
+export type TabBarActive = "center" | "left" | "right"
